@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f5f6f3" />
+    <meta
+      name="description"
+      content="Личная очередь торрентов. Загрузите на сервер, заберите на любое устройство."
+    />
+    <title>SimpleTorrent</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <svg
+      class="icon-defs"
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <symbol id="i-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="i-down" viewBox="0 0 24 24">
+          <path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4" />
+        </symbol>
+        <symbol id="i-up" viewBox="0 0 24 24">
+          <path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4" />
+        </symbol>
+        <symbol id="i-file" viewBox="0 0 24 24">
+          <path d="M14 2H5v20h14V7l-5-5Z M14 2v5h5M8 12h8M8 16h5" />
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24">
+          <path d="M3 7V4h6l2 3h10v13H3V7Z" />
+        </symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24">
+          <path d="M8 5v14M16 5v14" />
+        </symbol>
+        <symbol id="i-play" viewBox="0 0 24 24">
+          <path d="m8 5 11 7-11 7V5Z" />
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+          <path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 5 5" />
+        </symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24">
+          <path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="m5 12 4 4L19 6" />
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+          <path d="m6 6 12 12M6 18 18 6" />
+        </symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24">
+          <path d="M20 14A9 9 0 0 1 10 4a9 9 0 1 0 10 10Z" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+          <path d="M5 12h14m-5-5 5 5-5 5" />
+        </symbol>
+        <symbol id="i-logout" viewBox="0 0 24 24">
+          <path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4" />
+        </symbol>
+        <symbol id="i-grid" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <rect x="14" y="14" width="7" height="7" rx="1" />
+        </symbol>
+      </defs>
+    </svg>
+    <div id="login-screen" class="login-screen">
+      <main class="login-card">
+        <div class="brand">
+          <span class="brand-mark"
+            ><svg class="icon"><use href="#i-down" /></svg></span
+          ><span>SimpleTorrent<span class="brand-dot">.</span></span>
+        </div>
+        <div class="login-copy">
+          <span class="eyebrow">ВАША ЛИЧНАЯ ОЧЕРЕДЬ</span>
+          <h1>Скачает сервер.<br />Заберёте вы.</h1>
+          <p>
+            Оставьте торрент здесь и возвращайтесь за готовыми файлами с любого
+            устройства.
+          </p>
+        </div>
+        <form id="login-form">
+          <label for="password">Пароль доступа</label>
+          <div class="password-wrap">
+            <input
+              id="password"
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+              placeholder="Введите пароль"
+              maxlength="512"
+            /><button
+              class="primary icon-button"
+              type="submit"
+              aria-label="Войти"
+            >
+              <svg class="icon"><use href="#i-arrow" /></svg>
+            </button>
+          </div>
+          <p id="login-error" class="form-error" role="alert"></p>
+        </form>
+        <div class="login-footer">
+          <span class="status-dot"></span> Файлы остаются на вашем сервере
+        </div>
+      </main>
+      <span class="login-version">SimpleTorrent / v1.0</span>
+    </div>
+    <div id="workspace" class="workspace" hidden>
+      <aside class="sidebar">
+        <a href="/" class="brand" aria-label="SimpleTorrent — главная"
+          ><span class="brand-mark"
+            ><svg class="icon"><use href="#i-down" /></svg></span
+          ><span>SimpleTorrent<span class="brand-dot">.</span></span></a
+        >
+        <div class="sidebar-label">БИБЛИОТЕКА</div>
+        <nav class="filters" aria-label="Фильтр загрузок">
+          <button class="nav-item selected" data-filter="all">
+            <svg class="icon"><use href="#i-grid" /></svg>Все загрузки<span
+              id="count-all"
+              class="nav-count"
+              >0</span
+            >
+          </button>
+          <button class="nav-item" data-filter="active">
+            <svg class="icon"><use href="#i-down" /></svg>В процессе<span
+              id="count-active"
+              class="nav-count"
+              >0</span
+            >
+          </button>
+          <button class="nav-item" data-filter="ready">
+            <svg class="icon"><use href="#i-check" /></svg>Готовые<span
+              id="count-ready"
+              class="nav-count"
+              >0</span
+            >
+          </button>
+          <button class="nav-item" data-filter="paused">
+            <svg class="icon"><use href="#i-pause" /></svg>На паузе<span
+              id="count-paused"
+              class="nav-count"
+              >0</span
+            >
+          </button>
+        </nav>
+        <section class="storage-card" aria-labelledby="storage-title">
+          <div class="storage-heading">
+            <svg class="icon"><use href="#i-folder" /></svg
+            ><span id="storage-title">Хранилище</span>
+          </div>
+          <div class="storage-number">
+            <strong id="disk-free">—</strong><span>свободно</span>
+          </div>
+          <meter
+            id="storage-meter"
+            min="0"
+            max="100"
+            value="0"
+            aria-label="Занято места"
+          ></meter>
+          <p id="storage-caption">Подключаемся к серверу…</p>
+          <p id="disk-reserved" class="storage-reserved"></p>
+        </section>
+        <div class="sidebar-bottom">
+          <button id="settings-button" class="nav-item">
+            <svg class="icon"><use href="#i-settings" /></svg>Настройки
+          </button>
+          <div class="server-status">
+            <span id="connection-dot" class="status-dot"></span
+            ><span id="connection-label">Подключение…</span
+            ><span class="version">v1.0</span>
+          </div>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <span class="breadcrumb"
+            >Личный сервер <span>/</span> <strong>Загрузки</strong></span
+          >
+          <div class="topbar-actions">
+            <button
+              id="theme-button"
+              class="icon-button subtle"
+              aria-label="Переключить тему"
+              title="Переключить тему"
+            >
+              <svg class="icon"><use href="#i-moon" /></svg></button
+            ><button
+              id="logout-button"
+              class="icon-button subtle"
+              aria-label="Выйти"
+              title="Выйти"
+            >
+              <svg class="icon"><use href="#i-logout" /></svg>
+            </button>
+          </div>
+        </header>
+        <div class="content">
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow">SIMPLETORRENT / INBOX</span>
+              <h1>Ваши загрузки</h1>
+              <p>Отправьте торрент. Остальное — на сервере.</p>
+            </div>
+            <button id="add-button" class="primary">
+              <svg class="icon"><use href="#i-plus" /></svg>Добавить торрент
+            </button>
+          </div>
+          <section class="stats" aria-label="Состояние сервера">
+            <div class="stat">
+              <span>Скачивание</span
+              ><strong id="download-speed">0 <small>Б/с</small></strong
+              ><svg class="icon"><use href="#i-down" /></svg>
+            </div>
+            <div class="stat">
+              <span>Раздача</span
+              ><strong id="upload-speed">0 <small>Б/с</small></strong
+              ><svg class="icon"><use href="#i-up" /></svg>
+            </div>
+            <div class="stat">
+              <span>Готово забрать</span
+              ><strong id="ready-count">0 <small>загрузок</small></strong
+              ><svg class="icon"><use href="#i-check" /></svg>
+            </div>
+          </section>
+          <div class="mobile-storage">
+            <svg class="icon"><use href="#i-folder" /></svg
+            ><span id="mobile-storage-caption">Подключаемся к хранилищу…</span>
+          </div>
+          <button id="dropzone" class="dropzone">
+            <span class="drop-icon"
+              ><svg class="icon"><use href="#i-file" /></svg></span
+            ><span class="drop-copy"
+              ><strong>Перетащите .torrent сюда</strong
+              ><span>или нажмите, чтобы выбрать файлы</span></span
+            ><span class="drop-note">.torrent / до 4 МиБ</span
+            ><svg class="icon drop-plus"><use href="#i-plus" /></svg>
+          </button>
+          <input
+            id="torrent-input"
+            type="file"
+            accept=".torrent,application/x-bittorrent"
+            multiple
+            hidden
+          />
+          <p id="upload-status" class="upload-status" role="status" hidden></p>
+          <div id="server-error" class="notice" role="alert" hidden></div>
+          <section class="library" aria-labelledby="list-title">
+            <div class="library-toolbar">
+              <h2 id="list-title">
+                Все загрузки <span id="visible-count">0</span>
+              </h2>
+              <div class="list-controls">
+                <label class="search"
+                  ><svg class="icon"><use href="#i-search" /></svg
+                  ><input
+                    id="search"
+                    type="search"
+                    placeholder="Найти файл…"
+                    aria-label="Поиск загрузок" /></label
+                ><select id="sort" aria-label="Порядок загрузок">
+                  <option value="new">Сначала новые</option>
+                  <option value="old">Сначала старые</option>
+                  <option value="size">По размеру</option>
+                  <option value="name">По имени</option>
+                </select>
+              </div>
+            </div>
+            <div class="list-columns" aria-hidden="true">
+              <span>ФАЙЛ</span><span>СОСТОЯНИЕ</span><span>СКОРОСТЬ</span
+              ><span>ДЕЙСТВИЯ</span>
+            </div>
+            <div id="torrent-list" class="torrent-list" aria-live="off"></div>
+            <div id="empty-state" class="empty-state">
+              <div class="empty-icon">
+                <svg class="icon"><use href="#i-folder" /></svg>
+              </div>
+              <h3 id="empty-title">Здесь будут ваши файлы</h3>
+              <p id="empty-copy">
+                Добавьте первый торрент — сервер скачает его,<br />а вы заберёте
+                файлы, когда будет удобно.
+              </p>
+              <button id="empty-add" class="text-button">
+                Выбрать .torrent <svg class="icon"><use href="#i-arrow" /></svg>
+              </button>
+            </div>
+          </section>
+          <footer class="content-footer">
+            <span>На вашем диске. Под вашим контролем.</span
+            ><span id="updated-at">Ожидаем данные сервера</span>
+          </footer>
+        </div>
+      </main>
+    </div>
+    <dialog id="files-dialog" class="files-dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">СОДЕРЖИМОЕ ЗАГРУЗКИ</span>
+          <h2 id="files-title">Файлы</h2>
+          <p id="files-subtitle"></p>
+        </div>
+        <button
+          class="icon-button subtle"
+          data-close="files-dialog"
+          aria-label="Закрыть"
+        >
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <div id="files-list" class="files-list"></div>
+      <div class="dialog-footer">
+        <span>Готовые файлы можно забрать по отдельности.</span
+        ><a id="archive-link" class="primary" href="#"
+          ><svg class="icon"><use href="#i-down" /></svg>Забрать всё ZIP</a
+        >
+      </div>
+    </dialog>
+    <dialog id="delete-dialog" class="small-dialog">
+      <div class="dialog-heading">
+        <h2>Удалить загрузку?</h2>
+        <button
+          class="icon-button subtle"
+          data-close="delete-dialog"
+          aria-label="Закрыть"
+        >
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <p id="delete-name" class="delete-name"></p>
+      <label class="checkbox-label"
+        ><input id="delete-data" type="checkbox" checked />Удалить скачанные
+        файлы с диска</label
+      >
+      <p class="dialog-note">
+        Если снять галочку, файлы останутся на сервере, но исчезнут из этой
+        библиотеки.
+      </p>
+      <div class="dialog-footer">
+        <button class="secondary" data-close="delete-dialog">Отмена</button
+        ><button id="confirm-delete" class="danger">Удалить</button>
+      </div>
+    </dialog>
+    <dialog id="settings-dialog" class="small-dialog">
+      <div class="dialog-heading">
+        <h2>Настройки</h2>
+        <button
+          class="icon-button subtle"
+          data-close="settings-dialog"
+          aria-label="Закрыть"
+        >
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <form id="settings-form">
+        <p class="dialog-note">
+          Лимиты скорости для всех загрузок. Значение 0 — без ограничений.
+        </p>
+        <label for="download-limit">Скачивание, КиБ/с</label
+        ><input
+          id="download-limit"
+          type="number"
+          min="0"
+          max="1000000"
+          required
+        /><label for="upload-limit">Раздача, КиБ/с</label
+        ><input
+          id="upload-limit"
+          type="number"
+          min="0"
+          max="1000000"
+          required
+        />
+        <p id="engine-version" class="dialog-note"></p>
+        <div class="dialog-footer">
+          <button class="secondary" type="button" data-close="settings-dialog">
+            Отмена</button
+          ><button class="primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+name: simpletorrent
+services:
+  transmission:
+    build:
+      context: .
+      target: transmission
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      ST_RPC_USERNAME: simpletorrent
+      ST_RPC_PASSWORD: ${ST_RPC_PASSWORD:?Run python3 scripts/setup.py first}
+    volumes:
+      - ${ST_STORAGE:-torrent-data}:/data
+    ports:
+      - "${ST_BIND:-0.0.0.0}:51413:51413/tcp"
+      - "${ST_BIND:-0.0.0.0}:51413:51413/udp"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request, urllib.error;\ntry: urllib.request.urlopen('http://127.0.0.1:9091/transmission/rpc', timeout=3)\nexcept urllib.error.HTTPError as e: assert e.code in (401, 409)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+  app:
+    build:
+      context: .
+      target: app
+    restart: unless-stopped
+    init: true
+    depends_on:
+      transmission: { condition: service_healthy }
+    environment:
+      ST_PASSWORD: ${ST_PASSWORD:?Run python3 scripts/setup.py first}
+      ST_SESSION_SECRET: ${ST_SESSION_SECRET:?Run python3 scripts/setup.py first}
+      ST_RPC_PASSWORD: ${ST_RPC_PASSWORD:?Run python3 scripts/setup.py first}
+      ST_RPC_USERNAME: simpletorrent
+      ST_SECURE_COOKIE: ${ST_SECURE_COOKIE:-false}
+      ST_RESERVE_MIB: ${ST_RESERVE_MIB:-256}
+    ports:
+      - "${ST_BIND:-0.0.0.0}:${ST_PORT:-8080}:8080"
+    volumes:
+      - ${ST_STORAGE:-torrent-data}:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
+volumes:
+  torrent-data:

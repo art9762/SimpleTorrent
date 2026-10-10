@@ -1,0 +1,10 @@
+[project]
+name = "simpletorrent"
+version = "1.0.0"
+description = "A private torrent inbox for your Raspberry Pi"
+requires-python = ">=3.12"
+license = "GPL-3.0-only"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
