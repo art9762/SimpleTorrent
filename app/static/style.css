@@ -899,6 +899,22 @@ dialog::backdrop {
 .small-dialog {
   width: 430px;
 }
+.add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#magnet-uri {
+  width: 100%;
+  margin-top: 8px;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
 .files-dialog {
   width: 730px;
 }
@@ -1105,7 +1121,7 @@ input[type="checkbox"] {
   .page-heading h1 {
     font-size: 25px;
   }
-  .page-heading > .primary {
+  .page-heading .add-actions > button {
     font-size: 11px;
     padding: 10px 12px;
     margin-top: 23px;
@@ -1261,6 +1277,14 @@ input[type="checkbox"] {
   }
   .page-heading {
     margin-bottom: 23px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .add-actions {
+    width: 100%;
+  }
+  .page-heading .add-actions > button {
+    flex: 1;
   }
   .page-heading .eyebrow {
     font-size: 8px;
@@ -1272,15 +1296,15 @@ input[type="checkbox"] {
   }
   .page-heading p {
     font-size: 11px;
-    max-width: 170px;
+    max-width: none;
   }
-  .page-heading > .primary {
+  .page-heading .add-actions > button {
     font-size: 10px;
     gap: 5px;
     padding: 10px;
-    margin-top: 21px;
+    margin-top: 0;
   }
-  .page-heading > .primary .icon {
+  .page-heading .primary .icon {
     width: 14px;
     height: 14px;
   }

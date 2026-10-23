@@ -23,6 +23,7 @@ let renderKey = "",
   polling = false,
   pollAgain = false;
 const statusNames = {
+  metadata: "Получаем метаданные",
   ready: "Готово",
   downloading: "Скачивается",
   queued: "В очереди",
@@ -139,15 +140,16 @@ $("logout-button").addEventListener("click", async () => {
   }
 });
 function match(t, f) {
-  if (f === "ready") return t.remaining === 0;
-  if (f === "paused") return t.paused && t.remaining > 0;
-  if (f === "active") return !t.paused && t.remaining > 0;
+  if (f === "ready") return isReady(t);
+  if (f === "paused") return t.paused && !isReady(t);
+  if (f === "active") return !t.paused && !isReady(t);
   return true;
 }
+const isReady = (t) => t.metadata_ready !== false && t.remaining === 0;
 function updateSummary(data) {
   $("download-speed").innerHTML = speedHTML(data.download_speed);
   $("upload-speed").innerHTML = speedHTML(data.upload_speed);
-  const ready = torrents.filter((t) => t.remaining === 0).length;
+  const ready = torrents.filter(isReady).length;
   $("ready-count").innerHTML =
     `${ready} <small>${ready === 1 ? "загрузка" : ready >= 2 && ready <= 4 ? "загрузки" : "загрузок"}</small>`;
   for (const f of ["all", "active", "ready", "paused"])
@@ -162,13 +164,15 @@ function updateSummary(data) {
   $("disk-reserved").textContent = disk.reserved
     ? `В очереди: ${bytes(disk.reserved)}`
     : `Доступно для загрузок: ${bytes(disk.available)}`;
+  if (disk.pending_metadata)
+    $("disk-reserved").textContent += ` · размер неизвестен: ${disk.pending_metadata} magnet`;
   $("updated-at").textContent =
     `Обновлено в ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
   $("connection-label").textContent = "Сервер на связи";
   $("connection-dot").classList.remove("offline");
   $("server-error").hidden = !disk.low;
   $("server-error").textContent =
-    "На диске осталось мало места. Скачивания приостановлены. Освободите место и продолжите нужные загрузки.";
+    "Недостаточно места с учётом очереди. Скачивания приостанавливаются. Освободите место и продолжите нужные загрузки.";
 }
 function render() {
   if (!snapshot) return;
@@ -205,11 +209,13 @@ function render() {
     : null;
   $("torrent-list").innerHTML = visible
     .map((t) => {
-      const complete = t.remaining === 0,
-        progress = Math.max(0, Math.min(100, t.progress * 100));
+      const complete = isReady(t),
+        progress = Math.max(0, Math.min(100, (t.metadata_ready === false ? t.metadata_progress : t.progress) * 100));
       const subtext =
         t.error ||
-        (complete
+        (t.metadata_ready === false
+          ? t.paused ? "Получение метаданных на паузе" : "Ждём список файлов и размер от пиров"
+          : complete
           ? t.paused
             ? "На диске · раздача остановлена"
             : "На диске · раздаётся"
@@ -225,7 +231,7 @@ function render() {
         month: "short",
       });
       const controls = `<button class="icon-button subtle" data-action="${t.paused ? "resume" : "pause"}" data-id="${t.id}" aria-label="${t.paused ? "Продолжить" : "Пауза"}: ${escapeHTML(t.name)}" title="${t.paused ? "Продолжить" : "Пауза"}">${icon(t.paused ? "play" : "pause")}</button><button class="icon-button subtle" data-action="delete" data-id="${t.id}" aria-label="Удалить: ${escapeHTML(t.name)}" title="Удалить">${icon("trash")}</button>`;
-      return `<article class="torrent-row"><div class="file-cell"><div class="file-badge">${icon("file")}</div><div class="file-info"><button class="file-name" data-action="files" data-id="${t.id}" title="${escapeHTML(t.name)}">${escapeHTML(t.name)}</button><div class="file-meta"><span>${bytes(t.size)}</span><span class="separator date">·</span><span class="date">${date}</span></div></div></div><div class="status-cell"><div class="status-line"><span class="status-label ${t.status}">${complete ? icon("check") : ""}${statusNames[t.status] || t.status}</span><span class="percent">${number.format(progress)}%</span></div>${!complete ? `<progress value="${progress}" max="100" aria-label="Прогресс: ${escapeHTML(t.name)}"></progress>` : ""}<p title="${escapeHTML(subtext)}">${escapeHTML(subtext)}</p></div><div class="speed-cell">${complete ? "—" : bytes(t.download_speed) + "/с"}<span>${t.upload_speed ? `↑ ${bytes(t.upload_speed)}/с` : ""}</span></div><div class="row-actions">${complete ? `<button class="primary take-button" data-action="files" data-id="${t.id}">${icon("down")}Забрать</button>` : ""}${controls}</div></article>`;
+      return `<article class="torrent-row"><div class="file-cell"><div class="file-badge">${icon("file")}</div><div class="file-info"><button class="file-name" data-action="files" data-id="${t.id}" title="${escapeHTML(t.name)}">${escapeHTML(t.name)}</button><div class="file-meta"><span>${t.metadata_ready === false ? "Размер определяется" : bytes(t.size)}</span><span class="separator date">·</span><span class="date">${date}</span></div></div></div><div class="status-cell"><div class="status-line"><span class="status-label ${t.status}">${complete ? icon("check") : ""}${statusNames[t.status] || t.status}</span><span class="percent">${number.format(progress)}%</span></div>${!complete ? `<progress value="${progress}" max="100" aria-label="Прогресс: ${escapeHTML(t.name)}"></progress>` : ""}<p title="${escapeHTML(subtext)}">${escapeHTML(subtext)}</p></div><div class="speed-cell">${complete ? "—" : bytes(t.download_speed) + "/с"}<span>${t.upload_speed ? `↑ ${bytes(t.upload_speed)}/с` : ""}</span></div><div class="row-actions">${complete ? `<button class="primary take-button" data-action="files" data-id="${t.id}">${icon("down")}Забрать</button>` : ""}${controls}</div></article>`;
     })
     .join("");
   if (focusedKey) {
@@ -356,6 +362,27 @@ async function uploadFiles(files) {
     );
   refreshSoon();
 }
+$("magnet-button").addEventListener("click", () => {
+  $("magnet-error").textContent = "";
+  $("magnet-dialog").showModal();
+});
+$("magnet-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = $("magnet-submit");
+  button.disabled = true;
+  $("magnet-error").textContent = "";
+  try {
+    await api("/api/torrents/magnet", { method: "POST", body: JSON.stringify({ uri: $("magnet-uri").value.trim() }) });
+    $("magnet-dialog").close();
+    $("magnet-uri").value = "";
+    toast("Magnet добавлен. Получаем метаданные от пиров.");
+    refreshSoon();
+  } catch (error) {
+    $("magnet-error").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 $("torrent-list").addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
@@ -397,7 +424,9 @@ async function refreshFiles(showError) {
     if (id !== filesId || !$("files-dialog").open) return;
     $("files-title").textContent = data.torrent.name;
     $("files-subtitle").textContent =
-      `${data.files.length} файлов · ${bytes(data.torrent.size)} · готово ${data.files.filter((f) => f.ready).length}`;
+      data.torrent.metadata_ready === false
+        ? "Получаем метаданные. Список файлов и размер пока неизвестны."
+        : `${data.files.length} файлов · ${bytes(data.torrent.size)} · готово ${data.files.filter((f) => f.ready).length}`;
     const markup = data.files
       .map(
         (f) =>
@@ -410,7 +439,7 @@ async function refreshFiles(showError) {
       filesRenderKey = key;
     }
     $("archive-link").hidden =
-      data.torrent.remaining !== 0 || data.files.some((f) => !f.ready);
+      !isReady(data.torrent) || !data.files.length || data.files.some((f) => !f.ready);
     $("archive-link").href = `/api/torrents/${id}/archive`;
     $("archive-link").setAttribute("download", "");
   } catch (error) {

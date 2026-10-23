@@ -28,6 +28,21 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pytest -q tests/test_integration.py
         env: { ST_INTEGRATION: "1" }
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: tests/browser/package-lock.json }
+      - run: pip install -r requirements-dev.txt
+      - run: npm ci
+        working-directory: tests/browser
+      - run: npx playwright install --with-deps chromium
+        working-directory: tests/browser
+      - run: npm test
+        working-directory: tests/browser
   containers:
     runs-on: ubuntu-latest
     steps:

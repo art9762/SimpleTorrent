@@ -214,9 +214,10 @@
               <h1>Ваши загрузки</h1>
               <p>Отправьте торрент. Остальное — на сервере.</p>
             </div>
+            <div class="add-actions"><button id="magnet-button" class="secondary">Magnet-ссылка</button>
             <button id="add-button" class="primary">
               <svg class="icon"><use href="#i-plus" /></svg>Добавить торрент
-            </button>
+            </button></div>
           </div>
           <section class="stats" aria-label="Состояние сервера">
             <div class="stat">
@@ -304,6 +305,22 @@
         </div>
       </main>
     </div>
+    <dialog id="magnet-dialog" class="small-dialog" aria-labelledby="magnet-title">
+      <div class="dialog-heading">
+        <h2 id="magnet-title">Добавить magnet-ссылку</h2>
+        <button class="icon-button subtle" data-close="magnet-dialog" aria-label="Закрыть">×</button>
+      </div>
+      <form id="magnet-form">
+        <label for="magnet-uri">Magnet-ссылка (v1)</label>
+        <input id="magnet-uri" type="url" required maxlength="4096" placeholder="magnet:?xt=urn:btih:…" autocomplete="off" />
+        <p class="dialog-note">Сначала сервер получит список файлов и размер от пиров. До этого размер неизвестен; при нехватке места загрузка будет приостановлена.</p>
+        <p id="magnet-error" class="form-error" role="alert"></p>
+        <div class="dialog-footer">
+          <button type="button" class="secondary" data-close="magnet-dialog">Отмена</button>
+          <button id="magnet-submit" type="submit" class="primary">Добавить ссылку</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="files-dialog" class="files-dialog">
       <div class="dialog-heading">
         <div>

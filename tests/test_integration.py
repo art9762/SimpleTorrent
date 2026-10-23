@@ -15,14 +15,13 @@ import threading
 import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 import pytest
+from conftest import bencode
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from conftest import bencode
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ST_INTEGRATION") != "1" or not shutil.which("transmission-daemon"),
@@ -231,3 +230,82 @@ def test_real_download_file_archive_and_restart(tmp_path):
         stop_daemon(process)
         server.shutdown()
         server.server_close()
+
+
+def test_real_magnet_wait_pause_restart_without_content(tmp_path):
+    """A synthetic hash with no trackers/peers never transfers any content."""
+    from test_magnet import HASH, URI
+
+    root = tmp_path / "downloads"
+    root.mkdir()
+    config = tmp_path / "config"
+    config.mkdir()
+    rpc_port = free_port()
+    settings = Settings(
+        "integration-password",
+        "s" * 64,
+        root,
+        f"http://127.0.0.1:{rpc_port}/transmission/rpc",
+        "tester",
+        "rpc-password",
+        reserve_bytes=0,
+    )
+    (config / "settings.json").write_text(
+        json.dumps(
+            {
+                "rpc-enabled": True,
+                "rpc-bind-address": "127.0.0.1",
+                "rpc-port": rpc_port,
+                "rpc-authentication-required": True,
+                "rpc-username": "tester",
+                "rpc-password": "rpc-password",
+                "rpc-whitelist-enabled": False,
+                "rpc-host-whitelist-enabled": False,
+                "download-dir": str(root),
+                "dht-enabled": False,
+                "pex-enabled": False,
+                "lpd-enabled": False,
+                "port-forwarding-enabled": False,
+                "peer-port": free_port(),
+                "start-added-torrents": False,
+            }
+        )
+    )
+    process = start_daemon(config, rpc_port)
+    base = f"/api/torrents/{HASH}"
+    try:
+        with TestClient(create_app(settings)) as client:
+            client.headers["X-CSRF-Token"] = client.post(
+                "/api/login", json={"password": settings.password}
+            ).json()["csrf"]
+            response = client.post("/api/torrents/magnet", json={"uri": URI})
+            assert response.status_code == 201, response.text
+            item = client.get("/api/torrents").json()["torrents"][0]
+            assert item["id"] == HASH and item["metadata_ready"] is False
+            assert item["remaining"] is None and item["size"] is None
+            assert client.get(base + "/files").json()["files"] == []
+            assert client.get(base + "/archive").status_code == 409
+            assert client.post(base + "/pause").status_code == 200
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if client.get("/api/torrents").json()["torrents"][0]["paused"]:
+                    break
+                time.sleep(0.1)
+            else:
+                pytest.fail("Magnet did not pause")
+        stop_daemon(process)
+        process = start_daemon(config, rpc_port)
+        with TestClient(create_app(settings)) as client:
+            client.headers["X-CSRF-Token"] = client.post(
+                "/api/login", json={"password": settings.password}
+            ).json()["csrf"]
+            item = client.get("/api/torrents").json()["torrents"][0]
+            assert item["id"] == HASH and item["paused"] and not item["metadata_ready"]
+            assert (
+                client.post("/api/torrents/magnet", json={"uri": URI}).status_code
+                == 409
+            )
+            assert client.delete(base + "?delete_data=true").status_code == 200
+        assert not any(path.is_file() for path in root.rglob("*"))
+    finally:
+        stop_daemon(process)
