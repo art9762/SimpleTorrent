@@ -77,6 +77,7 @@ def test_only_supported_fields_forwarded_and_hybrid_keeps_v1():
         + "&xs=http%3A%2F%2F127.0.0.1%2Fmetadata&xl=1"
     )
     assert parse_qs(urlsplit(result["uri"]).query) == {"xt": ["urn:btih:" + HASH]}
+    assert result["uri"] == URI
 
 
 def test_requires_auth_and_csrf(setup, authorized):

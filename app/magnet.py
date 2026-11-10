@@ -72,7 +72,9 @@ def inspect_magnet(value):
         return {
             "hash": info_hash,
             "name": name[:200] or info_hash,
-            "uri": "magnet:?" + urlencode(canonical),
+            # Transmission reads the btih prefix before percent-decoding.
+            "uri": "magnet:?xt=urn:btih:" + info_hash
+            + ("&" + urlencode(canonical[1:]) if len(canonical) > 1 else ""),
         }
     except InvalidTorrent:
         raise
