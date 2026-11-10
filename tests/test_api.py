@@ -92,6 +92,21 @@ def test_invalid_and_oversized_upload(authorized):
     )
 
 
+def test_conflicting_file_paths_rejected_before_engine_add(authorized):
+    client, engine, _ = authorized
+    data = torrent_bytes(
+        name=b"package",
+        files=[
+            {b"length": 5, b"path": [b"folder"]},
+            {b"length": 6, b"path": [b"folder", b"child.txt"]},
+        ],
+    )
+    response = add(client, data)
+    assert response.status_code == 422, response.text
+    assert "пут" in response.json()["detail"]
+    assert engine.items == []
+
+
 def test_disk_admission_reserves_pending_downloads(authorized, monkeypatch):
     client, _, settings = authorized
     Usage = namedtuple("Usage", "total used free")

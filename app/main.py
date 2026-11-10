@@ -20,7 +20,8 @@ from starlette.concurrency import iterate_in_threadpool
 
 from app.config import Settings
 from app.engine import EngineError, Transmission
-from app.metainfo import InvalidTorrent, MAX_UPLOAD, inspect_torrent
+from app.magnet import MAX_MAGNET, inspect_magnet
+from app.metainfo import MAX_UPLOAD, InvalidTorrent, inspect_torrent
 from app.security import COOKIE, SESSION_SECONDS, Security
 
 log = logging.getLogger("simpletorrent")
@@ -41,15 +42,17 @@ class BodyLimit:
         if scope["type"] != "http" or scope["method"] not in ("POST", "PUT", "PATCH"):
             return await self.app(scope, receive, send)
         limit = MAX_UPLOAD + 64 * 1024 if scope["path"] == "/api/torrents" else 8192
+        detail = "Файл слишком большой. Максимум — 4 МиБ."
+        if scope["path"] == "/api/torrents/magnet":
+            limit = MAX_MAGNET * 6 + 128  # JSON escaping of a bounded Unicode URI.
+            detail = "Magnet-ссылка слишком большая. Максимум — 4096 символов."
         headers = dict(scope["headers"])
         try:
             declared = int(headers.get(b"content-length", b"0"))
         except ValueError:
             declared = limit + 1
         if declared > limit:
-            return await JSONResponse(
-                {"detail": "Файл слишком большой. Максимум — 4 МиБ."}, 413
-            )(scope, receive, send)
+            return await JSONResponse({"detail": detail}, 413)(scope, receive, send)
         count, exceeded = 0, False
 
         async def bounded_receive():
@@ -73,9 +76,7 @@ class BodyLimit:
         except BodyTooLarge:
             exceeded = True
         if exceeded:
-            await JSONResponse(
-                {"detail": "Файл слишком большой. Максимум — 4 МиБ."}, 413
-            )(scope, receive, send)
+            await JSONResponse({"detail": detail}, 413)(scope, receive, send)
 
 
 class Login(BaseModel):
@@ -87,6 +88,10 @@ class Limits(BaseModel):
     upload_kib: int = Field(ge=0, le=1000000)
 
 
+class Magnet(BaseModel):
+    uri: str = Field(min_length=1, max_length=MAX_MAGNET)
+
+
 def create_app(settings=None, engine=None):
     settings = settings or Settings.from_env()
     settings.download_dir.mkdir(parents=True, exist_ok=True)
@@ -95,19 +100,20 @@ def create_app(settings=None, engine=None):
     operations = asyncio.Lock()
     transfers = Counter()
 
+    def metadata_ready(t):
+        return t.get("metadataPercentComplete", 0) >= 1
+
     async def disk_guard():
         while True:
             try:
                 async with operations:
-                    if (
-                        shutil.disk_usage(settings.download_dir).free
-                        < settings.reserve_bytes
-                    ):
-                        torrents = await engine.torrents()
+                    torrents = await engine.torrents()
+                    if storage(torrents)["low"]:
                         ids = [
                             t["hashString"]
                             for t in torrents
-                            if t["leftUntilDone"] > 0 and t["status"] != 0
+                            if (not metadata_ready(t) or t["leftUntilDone"] > 0)
+                            and t["status"] != 0
                         ]
                         if ids:
                             await engine.call("torrent-stop", {"ids": ids})
@@ -193,7 +199,8 @@ def create_app(settings=None, engine=None):
             "reserved": reserved,
             "available": max(0, usage.free - reserved - settings.reserve_bytes),
             "reserve": settings.reserve_bytes,
-            "low": usage.free < settings.reserve_bytes,
+            "low": usage.free - reserved < settings.reserve_bytes,
+            "pending_metadata": sum(not metadata_ready(t) for t in torrents),
         }
 
     def require_capacity(torrents, additional=0):
@@ -205,9 +212,10 @@ def create_app(settings=None, engine=None):
             )
 
     def public(t):
+        known = metadata_ready(t)
         status = (
             "ready"
-            if t["leftUntilDone"] == 0 and t.get("metadataPercentComplete", 1) == 1
+            if t["leftUntilDone"] == 0 and known
             else {
                 0: "paused",
                 1: "queued",
@@ -220,14 +228,18 @@ def create_app(settings=None, engine=None):
         )
         if t.get("error"):
             status = "error"
+        elif not known:
+            status = "paused" if t["status"] == 0 else "metadata"
         return {
             "id": t["hashString"],
             "name": t["name"],
             "status": status,
             "paused": t["status"] == 0,
-            "progress": t["percentDone"],
-            "size": t["totalSize"],
-            "remaining": t["leftUntilDone"],
+            "progress": t["percentDone"] if known else 0,
+            "size": t["totalSize"] if known else None,
+            "remaining": t["leftUntilDone"] if known else None,
+            "metadata_ready": known,
+            "metadata_progress": t.get("metadataPercentComplete", 0),
             "download_speed": t["rateDownload"],
             "upload_speed": t["rateUpload"],
             "eta": t["eta"],
@@ -312,11 +324,43 @@ def create_app(settings=None, engine=None):
             await engine.call("torrent-stop", {"ids": [torrent_id]})
         return {"ok": True}
 
+    @app.post("/api/torrents/magnet", status_code=201)
+    async def add_magnet(body: Magnet, auth=Depends(security.authenticate)):
+        try:
+            metadata = inspect_magnet(body.uri)
+        except InvalidTorrent as exc:
+            raise HTTPException(422, str(exc)) from exc
+        async with operations:
+            existing = await engine.torrents()
+            if any(t["hashString"].lower() == metadata["hash"] for t in existing):
+                raise HTTPException(409, "Этот торрент уже есть в списке.")
+            if len(existing) >= 200:
+                raise HTTPException(
+                    409, "Максимум 200 загрузок. Удалите старые из списка."
+                )
+            require_capacity(existing)
+            result = await engine.call(
+                "torrent-add",
+                {
+                    "filename": metadata["uri"],
+                    "paused": True,
+                    "download-dir": str(settings.download_dir / metadata["hash"]),
+                },
+            )
+            if "torrent-duplicate" in result:
+                raise HTTPException(409, "Этот торрент уже есть в списке.")
+            torrent_id = result["torrent-added"]["hashString"]
+            try:
+                await engine.call("torrent-start", {"ids": [torrent_id]})
+            except EngineError:
+                log.warning("New magnet is paused because start failed")
+            return {"id": torrent_id, "name": metadata["name"]}
+
     @app.post("/api/torrents/{torrent_id}/resume")
     async def resume(torrent_id: str, auth=Depends(security.authenticate)):
         async with operations:
             torrent = await get_torrent(torrent_id)
-            if torrent["leftUntilDone"]:
+            if not metadata_ready(torrent) or torrent["leftUntilDone"]:
                 require_capacity(await engine.torrents())
             await engine.call("torrent-start", {"ids": [torrent_id]})
         return {"ok": True}
@@ -338,7 +382,11 @@ def create_app(settings=None, engine=None):
         return {"ok": True}
 
     def safe_file(t, index):
-        files = t.get("files", [])
+        if not metadata_ready(t):
+            raise HTTPException(
+                409, "Получаем метаданные. Список файлов пока неизвестен."
+            )
+        files = t.get("files") or []
         if index < 0 or index >= len(files):
             raise HTTPException(404, "Файл не найден.")
         entry = files[index]
@@ -366,7 +414,7 @@ def create_app(settings=None, engine=None):
     async def files(torrent_id: str, auth=Depends(security.authenticate)):
         t = await get_torrent(torrent_id, files=True)
         result = []
-        for i, entry in enumerate(t["files"]):
+        for i, entry in enumerate((t.get("files") or []) if metadata_ready(t) else []):
             ready = False
             if entry["bytesCompleted"] == entry["length"]:
                 try:
@@ -464,6 +512,14 @@ def create_app(settings=None, engine=None):
     async def archive(torrent_id: str, auth=Depends(security.authenticate)):
         async with operations:
             t = await get_torrent(torrent_id, files=True)
+            if not metadata_ready(t):
+                raise HTTPException(
+                    409, "Получаем метаданные. Список файлов пока неизвестен."
+                )
+            if not t.get("files"):
+                raise HTTPException(
+                    409, "Список файлов ещё не готов. Обновите страницу позже."
+                )
             if t["leftUntilDone"]:
                 raise HTTPException(409, "Дождитесь завершения всей загрузки.")
             archive = zipstream.ZipStream(

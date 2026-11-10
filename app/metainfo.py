@@ -1,7 +1,6 @@
 """Bounded bencode parser and preflight path validation for v1/hybrid torrents."""
 
 import hashlib
-from pathlib import PurePosixPath
 
 MAX_UPLOAD = 4 * 1024 * 1024
 MAX_FILES = 10000
@@ -66,6 +65,20 @@ def component(value):
     return text
 
 
+def register_path(tree, parts):
+    """Reject duplicate files and file/directory collisions in either order."""
+    node = tree
+    for part in parts:
+        if None in node:
+            raise InvalidTorrent("В торренте конфликтуют пути файлов и каталогов.")
+        node = node.setdefault(part, {})
+    if None in node:
+        raise InvalidTorrent("В торренте повторяется путь файла.")
+    if node:
+        raise InvalidTorrent("В торренте конфликтуют пути файлов и каталогов.")
+    node[None] = True
+
+
 def inspect_torrent(data):
     try:
         decoder = Decoder(data)
@@ -89,7 +102,10 @@ def inspect_torrent(data):
         entries = info.get(b"files", [{b"length": info.get(b"length"), b"path": []}])
         if not isinstance(entries, list) or not entries or len(entries) > MAX_FILES:
             raise InvalidTorrent("Торрент должен содержать от 1 до 10 000 файлов.")
-        size, seen = 0, set()
+        size = 0
+        # Transmission may use legacy paths or prefer UTF-8 paths (falling back
+        # per entry). Validate the complete file tree for both interpretations.
+        path_trees = {b"path": {}, b"path.utf-8": {}}
         for entry in entries:
             length = entry[b"length"]
             if type(length) is not int or length < 0:
@@ -98,22 +114,11 @@ def inspect_torrent(data):
                 raise InvalidTorrent(
                     "Символические ссылки в торренте не поддерживаются."
                 )
-            for key in (b"path", b"path.utf-8"):
-                if key in entry:
-                    path = entry[key]
-                    if not isinstance(path, list) or (b"files" in info and not path):
-                        raise InvalidTorrent("Некорректный путь файла.")
-                    for part in path:
-                        component(part)
-            path = str(
-                PurePosixPath(
-                    name,
-                    *(component(p) for p in entry.get(b"path.utf-8", entry[b"path"])),
-                )
-            )
-            if path in seen:
-                raise InvalidTorrent("В торренте повторяется имя файла.")
-            seen.add(path)
+            for key, tree in path_trees.items():
+                path = entry.get(key, entry[b"path"])
+                if not isinstance(path, list) or (b"files" in info and not path):
+                    raise InvalidTorrent("Некорректный путь файла.")
+                register_path(tree, (component(part) for part in path))
             size += length
         expected_pieces = (size + info[b"piece length"] - 1) // info[b"piece length"]
         if len(pieces) // 20 != expected_pieces:

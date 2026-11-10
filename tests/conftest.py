@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.engine import EngineError
+from app.magnet import inspect_magnet
 from app.main import create_app
 from app.metainfo import inspect_torrent
 
@@ -47,6 +48,7 @@ class FakeEngine:
         self.root = root
         self.items = []
         self.failed = False
+        self.calls = []
         self.settings = {
             "speed-limit-down": 0,
             "speed-limit-down-enabled": False,
@@ -64,6 +66,7 @@ class FakeEngine:
         if self.failed:
             raise EngineError("Торрент-сервис недоступен.")
         args = arguments or {}
+        self.calls.append((method, args))
         if method == "session-stats":
             return {}
         if method == "session-get":
@@ -74,7 +77,12 @@ class FakeEngine:
         if method == "torrent-add":
             import base64
 
-            meta = inspect_torrent(base64.b64decode(args["metainfo"]))
+            magnet = "filename" in args
+            meta = (
+                inspect_magnet(args["filename"])
+                if magnet
+                else inspect_torrent(base64.b64decode(args["metainfo"]))
+            )
             if any(t["hashString"] == meta["hash"] for t in self.items):
                 return {"torrent-duplicate": {"hashString": meta["hash"]}}
             t = {
@@ -83,8 +91,9 @@ class FakeEngine:
                 "name": meta["name"],
                 "status": 0,
                 "percentDone": 0,
-                "totalSize": meta["size"],
-                "leftUntilDone": meta["size"],
+                "totalSize": meta.get("size", 0),
+                "leftUntilDone": meta.get("size", 0),
+                "metadataPercentComplete": 0 if magnet else 1,
                 "rateDownload": 0,
                 "rateUpload": 0,
                 "eta": -1,

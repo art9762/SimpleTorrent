@@ -39,6 +39,54 @@ def test_symlinks_and_duplicate_paths_rejected():
             inspect_torrent(torrent_bytes(files=files))
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("variant", ["plain", "legacy", "utf8", "utf8-fallback"])
+@pytest.mark.parametrize("child", [[b"folder"], [b"folder", b"child.txt"]])
+def test_conflicting_paths_rejected_in_every_name_variant(reverse, variant, child):
+    files = [
+        {b"length": 5, b"path": [b"folder"]},
+        {b"length": 6, b"path": child},
+    ]
+    if variant == "legacy":
+        # Distinct preferred names must not hide conflicting legacy paths.
+        for i, entry in enumerate(files):
+            entry[b"path.utf-8"] = [f"translated-{i}.txt".encode()]
+    elif variant in ("utf8", "utf8-fallback"):
+        files[1][b"path.utf-8"] = files[1][b"path"]
+        files[1][b"path"] = [b"different.txt"]
+        if variant == "utf8":
+            files[0][b"path.utf-8"] = files[0][b"path"]
+            files[0][b"path"] = [b"another.txt"]
+    if reverse:
+        files.reverse()
+    with pytest.raises(InvalidTorrent):
+        inspect_torrent(torrent_bytes(files=files))
+
+
+def test_shared_directories_and_distinct_name_variants_are_valid():
+    files = [
+        {
+            b"length": 5,
+            b"path": [b"folder", b"a.txt"],
+            b"path.utf-8": [b"translated", b"a.txt"],
+        },
+        {
+            b"length": 6,
+            b"path": [b"folder", b"subfolder", b"b.txt"],
+            b"path.utf-8": [b"translated", b"subfolder", b"b.txt"],
+        },
+    ]
+    assert inspect_torrent(torrent_bytes(files=files))["size"] == 11
+
+
+def test_legacy_and_utf8_trees_are_independent():
+    files = [
+        {b"length": 5, b"path": [b"a"], b"path.utf-8": [b"b"]},
+        {b"length": 6, b"path": [b"b"], b"path.utf-8": [b"a"]},
+    ]
+    assert inspect_torrent(torrent_bytes(files=files))["size"] == 11
+
+
 @pytest.mark.parametrize(
     "data",
     [b"", b"de", b"i0e", b"d4:info", b"l" * 100, b"d4:infod4:name1:xe", b"9999:x"],
